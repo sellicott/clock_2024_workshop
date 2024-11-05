@@ -1,0 +1,111 @@
+name: gds
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  gds:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build GDS
+        uses: TinyTapeout/tt-gds-action@tt09
+        with:
+          flow: openlane2
+
+  precheck:
+    needs: gds
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Run Tiny Tapeout Precheck
+        uses: TinyTapeout/tt-gds-action/precheck@tt09
+
+  gl_test:
+    needs: gds
+    runs-on: ubuntu-24.04
+    steps:
+    - name: checkout repo
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Download GDS artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: tt_submission
+
+    - name: Set up environment variables
+      shell: bash
+      run: |
+        cat << EOF >> $GITHUB_ENV
+        PDK_ROOT=/home/runner/pdk
+        TEST_DIR=${{ github.workspace }}/test
+        PDK=sky130A
+        EOF
+
+    - name: Install Sky130 PDK
+      uses: TinyTapeout/volare-action@v2
+      with:
+        pdk_name: sky130
+        pdk_version: cd1748bb197f9b7af62a54507de6624e30363943
+        pdk_root: /home/runner/pdk
+
+    # Set Python up and install cocotb
+    - name: Setup python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install cocotb (if required)
+      if: ${{ hashFiles('test/requirements.txt') == '' }}
+      shell: bash
+      run: pip install cocotb==1.8.0
+
+    - name: Install Python packages
+      if: ${{ hashFiles('test/requirements.txt') != '' }}
+      shell: bash
+      run: pip install -r test/requirements.txt
+
+    - name: Install iverilog
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y iverilog
+
+    - name: Run tests
+      shell: bash
+      run: |
+        cp tt_submission/*.v "$TEST_DIR/gate_level_netlist.v"
+        cd "$TEST_DIR"
+        rm -f tb.vcd results.xml
+        make -f makefile.gl clean
+        GATES=yes make -f makefile.gl
+        test -f results.xml
+        ! grep failure results.xml
+
+    - name: Upload VCD
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+          name: gatelevel_test_vcd
+          path: |
+            ${{ env.TEST_DIR }}/tb.vcd
+            ${{ env.TEST_DIR }}/results.xml
+
+    - name: Test Summary
+      if: always()
+      uses: test-summary/action@v2.3
+      with:
+        paths: ${{ env.TEST_DIR }}/results.xml    
+
+  viewer:
+    needs: gds
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write      # to deploy to Pages
+      id-token: write   # to verify the deployment originates from an appropriate source
+    steps:
+      - uses: TinyTapeout/tt-gds-action/viewer@tt09

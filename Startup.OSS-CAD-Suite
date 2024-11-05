@@ -1,0 +1,4 @@
+# Startup.OSS-CAD-Suite
+# Activate environment by running "source Startup.OSS-CAD-Suite"
+OSS_CAD_HOME="$HOME/.local/oss-cad-suite-20241102"
+source "$OSS_CAD_HOME/environment"

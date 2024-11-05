@@ -1,0 +1,39 @@
+name: test
+on: [push, workflow_dispatch]
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install iverilog
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y iverilog
+
+      - name: Run tests
+        run: |
+          cd test
+          make -f makefile clean
+          make -f makefile
+          # make will return success even if the test fails, so check for failure in the results logfile
+          ! grep FAILED logfile.txt
+
+      - name: upload vcd
+        if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulation traces
+          path: |
+            test/clk_gen_tb.fst
+            test/button_debounce_tb.fst
+            test/clock_register_tb.fst
+            test/binary_to_bcd_tb.fst
+            test/bcd_to_7seg_tb.fst
+            test/clock_to_bcd_tb.fst
+            test/max7219_tb.fst
+            test/max7219_settings_tb.fst
+            test/output_wrapper_tb.fst
+            test/logfile.txt
